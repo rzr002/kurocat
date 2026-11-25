@@ -966,23 +966,6 @@ html.win7-ulw-mode .floating-side-menu {
   background: rgba(255, 92, 92, 0.18);
 }
 
-#music-caption {
-  position: fixed;
-  bottom: 1.5%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: 94%;
-  padding: .28em .82em;
-  border-radius: .8em;
-  background: rgba(24, 22, 29, .88);
-  color: #fff8ed;
-  font: 600 clamp(9px, 3.65vw, 22px)/1.38 system-ui, sans-serif;
-  text-align: center;
-  overflow-wrap: anywhere;
-  pointer-events: none;
-}
-
 #singing-notes {
   position: fixed;
   top: 24%;

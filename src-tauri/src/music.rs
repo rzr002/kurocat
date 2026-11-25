@@ -1,6 +1,26 @@
 use serde_json::{json, Value};
 
 #[tauri::command]
+pub fn set_lyric_bubble(window: tauri::WebviewWindow, text: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::ffi::{c_char, c_void, CString};
+        extern "C" {
+            fn kuro_set_lyric_bubble(pet: *mut c_void, text: *const c_char);
+        }
+        let lyric = CString::new(text.replace('\0', "")).map_err(|e| e.to_string())?;
+        let pet = window.clone();
+        return window.run_on_main_thread(move || {
+            if let Ok(native) = pet.ns_window() {
+                unsafe { kuro_set_lyric_bubble(native, lyric.as_ptr()) }
+            }
+        }).map_err(|e| e.to_string());
+    }
+    #[cfg(not(target_os = "macos"))]
+    { let _ = (window, text); Ok(()) }
+}
+
+#[tauri::command]
 pub async fn netease_playback() -> Result<Value, String> {
     #[cfg(target_os = "macos")]
     {

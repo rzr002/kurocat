@@ -26,7 +26,8 @@ fn main() {
     }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rerun-if-changed=src/netease.m");
-        cc::Build::new().file("src/netease.m").flag("-fobjc-arc").compile("kuro_netease");
+        println!("cargo:rerun-if-changed=src/lyric_bubble.m");
+        cc::Build::new().files(["src/netease.m", "src/lyric_bubble.m"]).flag("-fobjc-arc").compile("kuro_netease");
         println!("cargo:rustc-link-lib=framework=ApplicationServices");
         println!("cargo:rustc-link-lib=framework=AppKit");
     }

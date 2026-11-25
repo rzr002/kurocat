@@ -192,7 +192,7 @@ let active3d = false;
 let privacyActive = false;
 let gameActive = false;
 const performanceState = new MusicPerformance();
-const caption = document.getElementById('music-caption')!;
+let displayedLyric: string | undefined;
 const singingNotes = document.getElementById('singing-notes')!;
 let lastMusicKey = '';
 let pollGeneration = 0;
@@ -210,8 +210,12 @@ function displayPerformance(): void {
     poseTimer = undefined;
   }
   const frame = performanceState.frame(performance.now());
-  if (caption.textContent !== frame.caption) caption.textContent = frame.caption;
-  caption.hidden = !performanceState.active;
+  if (isMacPlatform() && displayedLyric !== frame.caption) {
+    displayedLyric = frame.caption;
+    void invoke('set_lyric_bubble', { text: frame.caption }).catch(() => {
+      if (displayedLyric === frame.caption) displayedLyric = undefined;
+    });
+  }
   singingNotes.hidden = !performanceState.active || privacyActive;
   engine.setSinging(performanceState.active, frame.mouth);
   engine3d?.setSinging(performanceState.active, frame.mouth);

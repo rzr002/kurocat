@@ -2541,6 +2541,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             music::netease_playback,
             music::netease_lyrics,
+            music::set_lyric_bubble,
             get_settings,
             get_resolved_locale,
             trim_idle_memory,
