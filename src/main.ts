@@ -1,3 +1,4 @@
+import type { SongCharacter } from './musicExpression';
 import './style.css';
 import { MusicPerformance, type Playback, type LyricsResponse } from './musicMode';
 import { invoke } from '@tauri-apps/api/core';
@@ -216,9 +217,9 @@ function displayPerformance(): void {
       if (displayedLyric === frame.caption) displayedLyric = undefined;
     });
   }
-  singingNotes.hidden = !performanceState.active || privacyActive;
-  engine.setSinging(performanceState.active, frame.mouth);
-  engine3d?.setSinging(performanceState.active, frame.mouth);
+  singingNotes.hidden = !frame.pose.vocal || privacyActive;
+  engine.setSinging(performanceState.active, frame.mouth, frame.pose);
+  engine3d?.setSinging(performanceState.active, frame.mouth, frame.pose);
 }
 
 async function loadSongLyrics(track: Playback, key: string): Promise<void> {
@@ -228,6 +229,13 @@ async function loadSongLyrics(track: Playback, key: string): Promise<void> {
     if (lyricCache.size >= 20) lyricCache.delete(lyricCache.keys().next().value!);
     lyricCache.set(key, lyrics);
     performanceState.load(key, lyrics);
+    if (lyrics.songId) {
+      // Start displaying lyrics immediately; the optional encyclopedia can arrive later.
+      void invoke<SongCharacter>('netease_song_character', { songId: lyrics.songId }).then(character => {
+        lyrics.character = character;
+        performanceState.setCharacter(key, character);
+      }).catch(() => {});
+    }
   } catch {
     if (lastMusicKey === key) lyricRetryAfter = performance.now() + 15000;
   }
@@ -339,7 +347,8 @@ function syncEngine3DState(): void {
   engine3d.setTailKeyConfig(tailMode, tailIds);
   engine3d.setPrivacyMode(privacyActive);
   engine3d.setFpsCap(settings.fpsCap === 30 ? 30 : 0);
-  engine3d.setSinging(performanceState.active, performanceState.frame(performance.now()).mouth);
+  const frame = performanceState.frame(performance.now());
+  engine3d.setSinging(performanceState.active, frame.mouth, frame.pose);
   engine3d.resize();
 }
 

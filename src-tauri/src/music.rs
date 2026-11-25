@@ -101,6 +101,7 @@ fn lookup(title: String, artist: String, duration: f64) -> Result<Value, String>
         ("yv", "-1".into()),
     ])?;
     Ok(json!({
+        "songId": id,
         "lrc": lyrics["lrc"]["lyric"],
         "yrc": lyrics["yrc"]["lyric"],
         "instrumental": lyrics["nolyric"] == true,
@@ -111,6 +112,42 @@ fn lookup(title: String, artist: String, duration: f64) -> Result<Value, String>
 pub async fn netease_lyrics(title: String, artist: String, duration: f64) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
     return tauri::async_runtime::spawn_blocking(move || lookup(title, artist, duration)).await.map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "macos"))]
+    Ok(json!({}))
+}
+
+#[cfg(target_os = "macos")]
+fn read_character(song_id: i64) -> Result<Value, String> {
+    let page = netease_get("song/play/about/block/page", &[("songId", song_id.to_string())])?;
+    let mut tags = Vec::new();
+    let mut bpm = None;
+    for block in page["data"]["blocks"].as_array().into_iter().flatten() {
+        if block["code"] != "SONG_PLAY_ABOUT_SONG_BASIC" { continue; }
+        for entry in block["creatives"].as_array().into_iter().flatten() {
+            let ui = &entry["uiElement"];
+            match ui["mainTitle"]["title"].as_str() {
+                Some("BPM") => {
+                    bpm = ui["textLinks"][0]["text"].as_str().and_then(|s| s.parse::<f64>().ok())
+                        .filter(|v| (35.0..=240.0).contains(v));
+                }
+                Some("推荐标签" | "曲风" | "情绪") => {
+                    for item in entry["resources"].as_array().into_iter().flatten() {
+                        if let Some(tag) = item["uiElement"]["mainTitle"]["title"].as_str() {
+                            tags.push(tag);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(json!({ "tags": tags, "bpm": bpm }))
+}
+
+#[tauri::command]
+pub async fn netease_song_character(song_id: i64) -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    return tauri::async_runtime::spawn_blocking(move || read_character(song_id)).await.map_err(|e| e.to_string())?;
     #[cfg(not(target_os = "macos"))]
     Ok(json!({}))
 }

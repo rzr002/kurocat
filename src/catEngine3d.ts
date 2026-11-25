@@ -1,3 +1,4 @@
+import { eyeForSide, restingPose, type SingingPose } from './musicExpression';
 import * as THREE from 'three';
 import type { CatSkinConfig } from './catSkins';
 import type { KeyboardLayoutId } from './keyboardLayout';
@@ -555,10 +556,21 @@ export class KuroCatEngine3D {
     closedArc: THREE.Mesh;
     squintSlit: THREE.Mesh;
     smileArc: THREE.Mesh;
+    downcastArc: THREE.Mesh;
     blush: THREE.Mesh;
   }> = [];
   private readonly faceGroup = new THREE.Group();
   private singing = false;
+  private delivery = restingPose;
+  private readonly tear = new THREE.Mesh(new THREE.ShapeGeometry((() => {
+    const drop = new THREE.Shape();
+    drop.moveTo(0, .045);
+    drop.bezierCurveTo(-.01, .016, -.043, -.013, -.025, -.037);
+    drop.bezierCurveTo(.013, -.076, .055, -.030, .023, .008);
+    drop.quadraticCurveTo(.008, .027, 0, .045);
+    return drop;
+  })()), new THREE.MeshBasicMaterial({ color:'#a6daf5', transparent:true, depthWrite:false }));
+
   private readonly singingMouth = new THREE.Group();
   private readonly openLip = new THREE.Mesh(new THREE.CircleGeometry(1, 24), new THREE.MeshBasicMaterial({ color: '#df959e' }));
   private readonly mouthInside = new THREE.Mesh(new THREE.CircleGeometry(1, 24), new THREE.MeshBasicMaterial({ color: '#633545' }));
@@ -1002,12 +1014,20 @@ export class KuroCatEngine3D {
       }, u => 0.011 + 0.008 * Math.sin(Math.PI * u));
       smileArc.mesh.visible = false;
 
+      const downcastArc = new TaperTube3D(18, 6, this.lidArcMat, 14);
+      downcastArc.update((u, out) => {
+        const x = lx + mix(-.118, .118, u);
+        const y = ly - s * (u - .5) * .089 - .032 * Math.sin(Math.PI * u);
+        out.set(x, y, this.surfaceZ(x, y) + .031);
+      }, u => .010 + .006 * Math.sin(Math.PI * u));
+      downcastArc.mesh.visible = false;
+
       const blushGeo = this.makeCurvedFacePatchGeo(lx + s * 0.06, ly - 0.155, 0.10, 0.056, 0.016, 8);
       const blush = new THREE.Mesh(blushGeo, this.blushMat);
       blush.renderOrder = 9;
       blush.visible = false;
 
-      this.headMount.add(blush, eyeMesh, closedArc.mesh, squintSlit.mesh, smileArc.mesh);
+      this.headMount.add(blush, eyeMesh, closedArc.mesh, squintSlit.mesh, smileArc.mesh, downcastArc.mesh);
       this.eyes.push({
         s,
         mesh: eyeMesh,
@@ -1015,9 +1035,14 @@ export class KuroCatEngine3D {
         closedArc: closedArc.mesh,
         squintSlit: squintSlit.mesh,
         smileArc: smileArc.mesh,
+        downcastArc: downcastArc.mesh,
         blush,
       });
     }
+
+    this.tear.position.set(-.28, -.034, this.surfaceZ(-.28, -.034) + .048);
+    this.tear.visible = false;
+    this.headMount.add(this.tear);
 
     // 7) Dainty Short KuroCat Cheek Whiskers merged into 1 single static draw call (was 6 draw calls!)
     {
@@ -1720,9 +1745,13 @@ export class KuroCatEngine3D {
     };
   }
 
-  public setSinging(active: boolean, opening: number): void {
-    this.singingMouth.visible = active && !this.privacyMode;
-    this.singingMouth.scale.set(0.071 - 0.021 * opening, 0.012 + 0.072 * opening, 1);
+  public setSinging(active: boolean, opening: number, pose: SingingPose): void {
+    this.delivery = pose;
+    this.singingMouth.visible = active && pose.vocal && !this.privacyMode;
+    this.singingMouth.scale.set((.071 - .021 * opening) * pose.mouthWidth, .012 + .081 * opening * pose.mouthHeight, 1);
+    this.tear.visible = active && !this.privacyMode && pose.tear > .01;
+    this.tear.material.opacity = pose.tear;
+    this.tear.position.y = -.023 - pose.tear * .031;
     this.tongue.visible = opening > 0.3;
     if (active === this.singing) return;
     this.singing = active;
@@ -2271,6 +2300,7 @@ export class KuroCatEngine3D {
           ? this.paws.R
           : null;
 
+    const music = this.singing && !this.privacyMode ? this.delivery : restingPose;
     let targetShift = 0;
     if (mousing) targetShift = -0.24;
     else if (striking && striking.keyId) {
@@ -2289,9 +2319,9 @@ export class KuroCatEngine3D {
       curious * 0.04 +
       Math.sin(t * 2.0) * 0.014;
 
-    this.bend.x = this.sShift.step(targetShift, dt);
+    this.bend.x = this.sShift.step(targetShift + music.sway * .095, dt);
     this.bend.z = this.sHunch.step(targetHunch, dt);
-    this.bend.squash = this.sSquash.step(targetSquash, dt);
+    this.bend.squash = this.sSquash.step(targetSquash + music.nod * .057, dt);
     this.bend.bellySwell = this.sleepAmt * 0.095 + (typingActive ? 0.035 : 0);
 
     // 5) Head pose & silky eye tracking
@@ -2344,10 +2374,9 @@ export class KuroCatEngine3D {
     const wakeEl = t - this.wakeAt;
     const wakeShake = wakeEl >= 0 && wakeEl < 0.55 ? Math.sin(wakeEl * 36) * 0.20 * (1 - wakeEl / 0.55) : 0;
 
-    this.headRot.pitch = this.sPitch.step(targetPitch, dt);
+    this.headRot.pitch = this.sPitch.step(targetPitch + music.nod * .19, dt);
     this.headRot.yaw = this.sYaw.step(targetYaw, dt);
-    const singingTilt = this.singing && !this.privacyMode ? 0.095 * Math.sin(t * 2.4) : 0;
-    this.headRot.roll = this.sRoll.step(targetRoll + singingTilt, dt) + wakeShake;
+    this.headRot.roll = this.sRoll.step(targetRoll + music.roll, dt) + wakeShake;
 
     // Deform one-piece body+head smoothly & sync headMount + optional collar!
     this.deformCatBody();
@@ -2385,12 +2414,12 @@ export class KuroCatEngine3D {
       (petActive ? 0.15 : 0) -
       0.56 * cross -
       0.10 * this.sleepAmt;
-    const earState = this.sEars.step(earTarget, dt);
+    const earState = this.sEars.step(earTarget + music.ear, dt);
     const earFlick = act && act.kind === 'ear' ? Math.sin(actU * Math.PI * 2) * 0.22 : 0;
     for (const e of this.ears) {
       const flick = act && act.kind === 'ear' && act.side === e.s ? earFlick : 0;
       const airplaneFold = cross * 0.56;
-      e.group.rotation.z = -e.s * (e.tilt + airplaneFold - earState * 0.28 + flick);
+      e.group.rotation.z = -e.s * (e.tilt + airplaneFold - earState * 0.55 + flick + (e.s === music.side ? music.flick : 0));
       e.group.rotation.x = -0.06 - cross * 0.14 + curious * 0.10;
       e.group.position.set(e.s * (0.295 + cross * 0.06), 0.255 - cross * 0.045, -0.015);
     }
@@ -2408,12 +2437,10 @@ export class KuroCatEngine3D {
     }
 
     const isSleepOrPrivacy = this.sleepAmt > 0.45 || this.privacyClose > 0.45;
-    const smiling = this.singing && !isSleepOrPrivacy && !this.privacyMode;
-    const isPetSquint = !smiling && !isSleepOrPrivacy && this.squintAmt > 0.38 && blinkClose < 0.3;
-    const isBlinkClosed = !smiling && !isSleepOrPrivacy && !isPetSquint && blinkClose > 0.58;
-    const showOpenEye = !smiling && !isSleepOrPrivacy && !isPetSquint && !isBlinkClosed;
-
-    this.blushMat.opacity += ((smiling ? 0.58 : petActive ? 0.46 : 0) - this.blushMat.opacity) * approach(8, dt);
+    const performing = this.singing && !isSleepOrPrivacy && !this.privacyMode;
+    const isPetSquint = !performing && !isSleepOrPrivacy && this.squintAmt > .38 && blinkClose < .3;
+    const isBlinkClosed = !isSleepOrPrivacy && !isPetSquint && blinkClose > .58;
+    this.blushMat.opacity += ((performing ? music.blush : petActive ? .46 : 0) - this.blushMat.opacity) * approach(8, dt);
     if (this.blushMat.opacity < 0.004 && !petActive) this.blushMat.opacity = 0;
     const showBlush = this.blushMat.opacity > 0.004;
     catAudio.setPurrIntensity(petActive ? 0.85 : 0);
@@ -2424,14 +2451,19 @@ export class KuroCatEngine3D {
 
     for (const e of this.eyes) {
       e.blush.visible = showBlush;
-      e.smileArc.visible = smiling;
-      e.mesh.visible = showOpenEye;
-      e.closedArc.visible = isSleepOrPrivacy || isBlinkClosed;
+      const eye = performing ? eyeForSide(music, e.s) : 'open';
+      const openShape = eye === 'open' || eye === 'soft' || eye === 'focused';
+      const shut = isSleepOrPrivacy || isBlinkClosed;
+      e.smileArc.visible = !shut && eye === 'smile';
+      e.downcastArc.visible = !shut && eye === 'downcast';
+      e.mesh.visible = !shut && !isPetSquint && openShape;
+      e.closedArc.visible = shut || eye === 'closed';
       e.squintSlit.visible = isPetSquint;
 
-      if (showOpenEye) {
-        const irisRx = 0.156 * (1 + curious * 0.06);
-        const irisRy = Math.max(0.02, 0.136 * (1 + curious * 0.09) * (1 - blinkClose * 0.8));
+      if (e.mesh.visible) {
+        const openness = eye === 'soft' ? .55 : eye === 'focused' ? .67 : 1;
+        const irisRx = .156 * (1 + curious * .06);
+        const irisRy = Math.max(.02, .136 * (1 + curious * .09) * (1 - blinkClose * .8) * openness);
 
         const pRx = clamp(
           (0.064 + curious * 0.048 + this.excite * 0.008) * (1 - cross * 0.32),
@@ -2446,12 +2478,12 @@ export class KuroCatEngine3D {
         const py = clamp(gazeY * maxTy, -maxTy, maxTy);
 
         (e.mat.uniforms.uScale.value as THREE.Vector2).set(irisRx / EYE_MAX_RX, irisRy / EYE_MAX_RY);
-        e.mat.uniforms.uTilt.value = e.s * -(0.06 + 0.06 * (typingActive ? 1 : 0));
+        e.mat.uniforms.uTilt.value = e.s * -(eye === 'focused' ? .30 : .06 + .06 * (typingActive ? 1 : 0));
         (e.mat.uniforms.uPupilCenter.value as THREE.Vector2).set(px / irisRx, py / irisRy);
         (e.mat.uniforms.uPupilRad.value as THREE.Vector2).set(pRx / irisRx, pRy / irisRy);
         e.mat.uniforms.uCross.value = cross;
         e.mat.uniforms.uCurious.value = curious;
-        e.mat.uniforms.uShineAmt.value = shineAmt;
+        e.mat.uniforms.uShineAmt.value = performing && (music.mood === 'bright' || music.mood === 'tender') ? Math.max(.8, shineAmt) : shineAmt;
       }
     }
 
