@@ -39,7 +39,6 @@ interface AppSettings {
   clickThroughLocked: boolean;
   showKeyBubbles: boolean;
   soundEnabled: boolean;
-  musicMode?: boolean;
   autostart: boolean;
   catBreed: string;
   mcpEnabled: boolean;
@@ -194,6 +193,7 @@ let privacyActive = false;
 let gameActive = false;
 const performanceState = new MusicPerformance();
 const caption = document.getElementById('music-caption')!;
+const singingNotes = document.getElementById('singing-notes')!;
 let lastMusicKey = '';
 let pollGeneration = 0;
 let musicTimer: number | undefined;
@@ -212,6 +212,7 @@ function displayPerformance(): void {
   const frame = performanceState.frame(performance.now());
   if (caption.textContent !== frame.caption) caption.textContent = frame.caption;
   caption.hidden = !performanceState.active;
+  singingNotes.hidden = !performanceState.active || privacyActive;
   engine.setSinging(performanceState.active, frame.mouth);
   engine3d?.setSinging(performanceState.active, frame.mouth);
 }
@@ -245,7 +246,7 @@ async function pollMusic(generation: number): Promise<void> {
 }
 
 function syncMusicMode(): void {
-  const enabled = isMacPlatform() && settings.musicMode !== false && settings.catBreed !== 'dafeiyu';
+  const enabled = isMacPlatform() && settings.catBreed !== 'dafeiyu';
   if (enabled === musicEnabled) return;
   musicEnabled = enabled;
   pollGeneration++;
@@ -450,9 +451,6 @@ function syncMenuUI(): void {
   setCheck('chk-bubbles', settings.showKeyBubbles);
   setCheck('chk-lock', settings.clickThroughLocked);
   setCheck('chk-sound', settings.soundEnabled);
-  const musicToggle = document.getElementById('btn-music');
-  if (musicToggle) musicToggle.style.display = isMacPlatform() ? '' : 'none';
-  setCheck('chk-music', settings.musicMode !== false);
   setCheck('chk-top', settings.alwaysOnTop);
   setCheck('chk-autostart', settings.autostart);
   setCheck('chk-mcp', settings.mcpEnabled);
@@ -1131,7 +1129,6 @@ async function bootstrap(): Promise<void> {
 
   await listen<InputEvent>('kuro-input', (ev) => {
     const p = ev.payload;
-    if (performanceState.active && (p.kind === 'keyDown' || p.kind === 'keyUp' || p.kind === 'privacyTyping')) return;
     switch (p.kind) {
       case 'keyDown':
         if (tailPickerOpen) {
@@ -1378,9 +1375,6 @@ async function bootstrap(): Promise<void> {
       case 'toggle-lock':
         void applySettingsPatch({ clickThroughLocked: !settings.clickThroughLocked });
         closeContextMenu();
-        break;
-      case 'toggle-music':
-        void applySettingsPatch({ musicMode: settings.musicMode === false });
         break;
       case 'toggle-sound':
         void applySettingsPatch({ soundEnabled: !settings.soundEnabled });

@@ -554,6 +554,7 @@ export class KuroCatEngine3D {
     mat: THREE.ShaderMaterial;
     closedArc: THREE.Mesh;
     squintSlit: THREE.Mesh;
+    smileArc: THREE.Mesh;
     blush: THREE.Mesh;
   }> = [];
   private readonly faceGroup = new THREE.Group();
@@ -993,18 +994,27 @@ export class KuroCatEngine3D {
       );
       squintSlit.mesh.visible = false;
 
+      const smileArc = new TaperTube3D(18, 6, this.lidArcMat, 14);
+      smileArc.update((u, out) => {
+        const x = lx + mix(-0.121, 0.121, u);
+        const y = ly - 0.020 + 0.070 * Math.sin(Math.PI * u);
+        out.set(x, y, this.surfaceZ(x, y) + 0.030);
+      }, u => 0.011 + 0.008 * Math.sin(Math.PI * u));
+      smileArc.mesh.visible = false;
+
       const blushGeo = this.makeCurvedFacePatchGeo(lx + s * 0.06, ly - 0.155, 0.10, 0.056, 0.016, 8);
       const blush = new THREE.Mesh(blushGeo, this.blushMat);
       blush.renderOrder = 9;
       blush.visible = false;
 
-      this.headMount.add(blush, eyeMesh, closedArc.mesh, squintSlit.mesh);
+      this.headMount.add(blush, eyeMesh, closedArc.mesh, squintSlit.mesh, smileArc.mesh);
       this.eyes.push({
         s,
         mesh: eyeMesh,
         mat: eyeMat,
         closedArc: closedArc.mesh,
         squintSlit: squintSlit.mesh,
+        smileArc: smileArc.mesh,
         blush,
       });
     }
@@ -1711,23 +1721,13 @@ export class KuroCatEngine3D {
   }
 
   public setSinging(active: boolean, opening: number): void {
-    this.singingMouth.visible = active;
+    this.singingMouth.visible = active && !this.privacyMode;
     this.singingMouth.scale.set(0.071 - 0.021 * opening, 0.012 + 0.072 * opening, 1);
     this.tongue.visible = opening > 0.3;
     if (active === this.singing) return;
     this.singing = active;
     this.wake();
-    if (!active) return;
-    this.lastKey = -100;
-    this.desk.releaseAllKeys();
-    for (const paw of [this.paws.L, this.paws.R]) { paw.down = false; paw.keyId = null; }
-    this.tailTap.down = false;
-    this.tailTap.keyId = null;
-    this.tailTap.t0 = -100;
-    for (const popup of this.popups.splice(0)) {
-      this.scene.remove(popup.sprite);
-      popup.sprite.material.dispose();
-    }
+
   }
 
   public setPrivacyMode(active: boolean): void {
@@ -2204,7 +2204,7 @@ export class KuroCatEngine3D {
     const curious = clamp(this.sCurious.step(curiousNow ? 1 : 0, dt), 0, 1);
 
     // Grumpy annoyance state
-    if (!this.privacyMode && !this.asleep) {
+    if (!this.singing && !this.privacyMode && !this.asleep) {
       if (cps > 8.5) {
         this.pokeAnnoy((cps - 8.5) * 0.055 * dt);
       } else if (this.isCross && t - this.lastKey < 0.9 && cps >= 4) {
@@ -2346,7 +2346,7 @@ export class KuroCatEngine3D {
 
     this.headRot.pitch = this.sPitch.step(targetPitch, dt);
     this.headRot.yaw = this.sYaw.step(targetYaw, dt);
-    const singingTilt = this.singing ? 0.048 * Math.sin(t * 2.4) : 0;
+    const singingTilt = this.singing && !this.privacyMode ? 0.095 * Math.sin(t * 2.4) : 0;
     this.headRot.roll = this.sRoll.step(targetRoll + singingTilt, dt) + wakeShake;
 
     // Deform one-piece body+head smoothly & sync headMount + optional collar!
@@ -2408,11 +2408,12 @@ export class KuroCatEngine3D {
     }
 
     const isSleepOrPrivacy = this.sleepAmt > 0.45 || this.privacyClose > 0.45;
-    const isPetSquint = !isSleepOrPrivacy && this.squintAmt > 0.38 && blinkClose < 0.3;
-    const isBlinkClosed = !isSleepOrPrivacy && !isPetSquint && blinkClose > 0.58;
-    const showOpenEye = !isSleepOrPrivacy && !isPetSquint && !isBlinkClosed;
+    const smiling = this.singing && !isSleepOrPrivacy && !this.privacyMode;
+    const isPetSquint = !smiling && !isSleepOrPrivacy && this.squintAmt > 0.38 && blinkClose < 0.3;
+    const isBlinkClosed = !smiling && !isSleepOrPrivacy && !isPetSquint && blinkClose > 0.58;
+    const showOpenEye = !smiling && !isSleepOrPrivacy && !isPetSquint && !isBlinkClosed;
 
-    this.blushMat.opacity += ((petActive ? 0.46 : 0) - this.blushMat.opacity) * approach(8, dt);
+    this.blushMat.opacity += ((smiling ? 0.58 : petActive ? 0.46 : 0) - this.blushMat.opacity) * approach(8, dt);
     if (this.blushMat.opacity < 0.004 && !petActive) this.blushMat.opacity = 0;
     const showBlush = this.blushMat.opacity > 0.004;
     catAudio.setPurrIntensity(petActive ? 0.85 : 0);
@@ -2423,6 +2424,7 @@ export class KuroCatEngine3D {
 
     for (const e of this.eyes) {
       e.blush.visible = showBlush;
+      e.smileArc.visible = smiling;
       e.mesh.visible = showOpenEye;
       e.closedArc.visible = isSleepOrPrivacy || isBlinkClosed;
       e.squintSlit.visible = isPetSquint;

@@ -982,3 +982,30 @@ html.win7-ulw-mode .floating-side-menu {
   overflow-wrap: anywhere;
   pointer-events: none;
 }
+
+#singing-notes {
+  position: fixed;
+  top: 24%;
+  left: 67%;
+  pointer-events: none;
+  font: 700 clamp(9px, 4.7vw, 25px)/1 system-ui, sans-serif;
+  color: #f7a3af;
+  text-shadow: 0 1px 2px #422b36;
+}
+#singing-notes span {
+  position: absolute;
+  animation: kuro-singing-note 2.1s ease-out infinite;
+}
+#singing-notes span + span {
+  left: .8em;
+  animation-delay: -1.05s;
+}
+@keyframes kuro-singing-note {
+  0% { opacity: 0; transform: translate(0, 0) rotate(-10deg); }
+  25% { opacity: .9; }
+  100% { opacity: 0; transform: translate(.8em, -1.4em) rotate(12deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #singing-notes span { animation: none; }
+  #singing-notes span + span { display: none; }
+}

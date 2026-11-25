@@ -274,32 +274,20 @@ export class KuroCatEngine {
     if (active === this.singing) return;
     this.singing = active;
     this.wakeCat();
-    if (!active) return;
-    this.heldKeys.clear();
-    this.catTail.heldVks.clear();
-    this.catTailHeldAt.clear();
-    this.catTail.active = false;
-    this.catTail.reach = 0;
-    this.bubbles.length = 0;
-    this.recentKeyTimes.length = 0;
-    this.lastAnyKeyAt = -10000;
-    this.typingEnergy = 0;
-    for (const anim of this.keyAnims.values()) {
-      anim.pressed = false;
-      anim.pressAmount = 0;
-      anim.lastHitAt = -10000;
-    }
-    for (const paw of [this.leftPaw, this.rightPaw]) {
-      paw.mode = 'idle';
-      paw.smears.length = 0;
-    }
+
   }
 
   private drawSingingMouth(ctx: CanvasRenderingContext2D, x: number): void {
-    if (!this.singing) return;
+    if (!this.singing || this.privacyMode) return;
     const o = this.mouthOpening;
     const w = 5.6 - o * 1.4, h = 1.2 + o * 5.8;
     ctx.save();
+    ctx.fillStyle = 'rgba(244, 143, 159, 0.43)';
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(x + side * 29, 12, 7.0, 3.6, side * -0.13, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.fillStyle = '#6d3543';
     ctx.strokeStyle = '#d598a0';
     ctx.lineWidth = 1.2;
@@ -1873,7 +1861,7 @@ export class KuroCatEngine {
     const curiousClamped = Math.min(1, this.curiousAmount);
 
     // Annoyance accumulates from sustained furious typing (>8.5 CPS) or key mashing (in onKeyDown), cools down after 2.2s quiet
-    if (isCatMode && !this.privacyMode && !this.asleep) {
+    if (isCatMode && !this.singing && !this.privacyMode && !this.asleep) {
       const cps = this.recentKeyTimes.length / 0.95;
       if (cps > 8.5) {
         this.pokeAnnoy((cps - 8.5) * 0.055 * dt, now);
@@ -2003,7 +1991,7 @@ export class KuroCatEngine {
     // Continuous smooth head cock when curious (never snaps left/right across dx=0!)
     const curiousCock = curiousClamped * 0.16 * gx;
     const sleepTilt = this.sleepAmount * 0.08;
-    const singingTilt = this.singing ? 0.048 * Math.sin(this.elapsed * 2.4) : 0;
+    const singingTilt = this.singing && !this.privacyMode ? 0.095 * Math.sin(this.elapsed * 2.4) : 0;
     const desiredHeadTilt = singingTilt +
       this.typingSway * 0.18 +
       this.typingHunch * (this.strikeRock * 0.065 - 0.02) +
@@ -3371,6 +3359,17 @@ export class KuroCatEngine {
     ctx.restore();
   }
 
+  private drawSingingEye(ctx: CanvasRenderingContext2D, color: string): void {
+    const lift = 9.4 + 1.4 * this.mouthOpening;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3.1;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-12, 3);
+    ctx.quadraticCurveTo(0, -lift, 12, 2);
+    ctx.stroke();
+  }
+
   private drawEyes(ctx: CanvasRenderingContext2D, cx: number, eyeY: number): void {
     const isRagdoll = this.catBreed === 'ragdoll';
     const nowEye = performance.now();
@@ -3401,6 +3400,12 @@ export class KuroCatEngine {
         ctx.moveTo(-13.5, -0.5);
         ctx.quadraticCurveTo(0, 5.2, 13.5, -0.5);
         ctx.stroke();
+        ctx.restore();
+        continue;
+      }
+
+      if (this.singing && !this.privacyMode) {
+        this.drawSingingEye(ctx, isRagdoll ? '#344354' : '#d4f044');
         ctx.restore();
         continue;
       }
@@ -4947,6 +4952,12 @@ export class KuroCatEngine {
         ctx.moveTo(-13.5, -0.5);
         ctx.quadraticCurveTo(0, 5.2, 13.5, -0.5);
         ctx.stroke();
+        ctx.restore();
+        continue;
+      }
+
+      if (this.singing && !this.privacyMode) {
+        this.drawSingingEye(ctx, s.squintColor);
         ctx.restore();
         continue;
       }

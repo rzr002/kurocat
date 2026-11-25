@@ -107,7 +107,7 @@ fn detect_install_kind() -> &'static str {
     }
     #[cfg(target_os = "macos")]
     {
-        return "macos-app";
+        return "macos-music";
     }
     #[cfg(target_os = "linux")]
     {
@@ -1076,6 +1076,12 @@ pub fn perform_update_install(app: &AppHandle, info: UpdateInfo) -> Result<(), S
             format!("已是最新版本 v{}", info.current_version),
             Some(info),
         );
+        return Ok(());
+    }
+
+    // A stock bundle would remove the local NetEase integration.
+    if info.has_update && detect_install_kind() == "macos-music" {
+        open_url_in_browser(REPO_RELEASES_PAGE);
         return Ok(());
     }
 

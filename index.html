@@ -9,6 +9,7 @@
     <canvas id="pet-canvas"></canvas>
     <canvas id="pet-canvas-3d" class="hidden"></canvas>
 
+    <div id="singing-notes" aria-hidden="true" hidden><span>♪</span><span>♫</span></div>
     <div id="music-caption" role="group" aria-label="当前歌词" hidden></div>
 
     <div id="update-toast" class="update-toast hidden" role="status" aria-live="polite">
@@ -89,10 +90,6 @@
       <button class="menu-item" data-action="toggle-lock">
         <span data-i18n="menu.toggle_lock">锁定鼠标穿透（Alt 解锁）</span>
         <span class="menu-check" id="chk-lock"></span>
-      </button>
-      <button class="menu-item" id="btn-music" data-action="toggle-music" title="网易云播放时跟唱并显示歌词，暂停后恢复打字">
-        <span>听歌模式 · 网易云音乐</span>
-        <span class="menu-check" id="chk-music">✓</span>
       </button>
       <button class="menu-item" data-action="toggle-sound">
         <span data-i18n="menu.toggle_sound">摸头呼噜声</span>
