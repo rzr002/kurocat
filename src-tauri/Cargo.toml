@@ -19,6 +19,7 @@ layout-108 = []
 win7 = ["tauri/custom-protocol"]
 
 [build-dependencies]
+cc = "1"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]

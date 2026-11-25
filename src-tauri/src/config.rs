@@ -3,6 +3,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+fn default_music_mode() -> bool { cfg!(target_os = "macos") }
+
 fn default_cat_breed() -> String {
     "black".to_string()
 }
@@ -174,6 +176,8 @@ pub struct AppSettings {
     pub click_through_locked: bool,
     pub show_key_bubbles: bool,
     pub sound_enabled: bool,
+    #[serde(default = "default_music_mode")]
+    pub music_mode: bool,
     pub autostart: bool,
     #[serde(default = "default_cat_breed")]
     pub cat_breed: String,
@@ -223,6 +227,7 @@ impl Default for AppSettings {
             click_through_locked: false,
             show_key_bubbles: true,
             sound_enabled: true,
+            music_mode: default_music_mode(),
             autostart: false,
             cat_breed: default_cat_breed(),
             mcp_enabled: default_mcp_enabled(),

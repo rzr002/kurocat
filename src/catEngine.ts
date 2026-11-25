@@ -266,6 +266,56 @@ export class KuroCatEngine {
   private lastMouseNX = 0.5;
   private lastDt = 1 / 60;
 
+  private singing = false;
+  private mouthOpening = 0;
+
+  public setSinging(active: boolean, opening: number): void {
+    this.mouthOpening = opening;
+    if (active === this.singing) return;
+    this.singing = active;
+    this.wakeCat();
+    if (!active) return;
+    this.heldKeys.clear();
+    this.catTail.heldVks.clear();
+    this.catTailHeldAt.clear();
+    this.catTail.active = false;
+    this.catTail.reach = 0;
+    this.bubbles.length = 0;
+    this.recentKeyTimes.length = 0;
+    this.lastAnyKeyAt = -10000;
+    this.typingEnergy = 0;
+    for (const anim of this.keyAnims.values()) {
+      anim.pressed = false;
+      anim.pressAmount = 0;
+      anim.lastHitAt = -10000;
+    }
+    for (const paw of [this.leftPaw, this.rightPaw]) {
+      paw.mode = 'idle';
+      paw.smears.length = 0;
+    }
+  }
+
+  private drawSingingMouth(ctx: CanvasRenderingContext2D, x: number): void {
+    if (!this.singing) return;
+    const o = this.mouthOpening;
+    const w = 5.6 - o * 1.4, h = 1.2 + o * 5.8;
+    ctx.save();
+    ctx.fillStyle = '#6d3543';
+    ctx.strokeStyle = '#d598a0';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(x, 19, w, h, 0, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    if (o > 0.3) {
+      ctx.fillStyle = '#ec98a4';
+      ctx.beginPath();
+      ctx.ellipse(x, 19 + h * 0.5, w * 0.62, h * 0.24, 0, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   public setPrivacyMode(active: boolean): void {
     this.wakeRendering();
     this.privacyMode = active;
@@ -1792,7 +1842,7 @@ export class KuroCatEngine {
     // 1) Alive cat emotional states: sleep (loaf + Zzz), curious (laser-pointer eyes), annoy -> cross (airplane ears + tail desk-thump), idle fidgets!
     const sleepAfterMs = this.embedded ? 18_000 : 28_000;
     const idleMs = now - this.lastInputAt;
-    if (isCatMode && !this.privacyMode && !this.asleep && this.petEnergy < 0.15 && idleMs > sleepAfterMs) {
+    if (isCatMode && !this.singing && !this.privacyMode && !this.asleep && this.petEnergy < 0.15 && idleMs > sleepAfterMs) {
       this.asleep = true;
       this.isCross = false;
       this.idleAct = null;
@@ -1953,7 +2003,8 @@ export class KuroCatEngine {
     // Continuous smooth head cock when curious (never snaps left/right across dx=0!)
     const curiousCock = curiousClamped * 0.16 * gx;
     const sleepTilt = this.sleepAmount * 0.08;
-    const desiredHeadTilt =
+    const singingTilt = this.singing ? 0.048 * Math.sin(this.elapsed * 2.4) : 0;
+    const desiredHeadTilt = singingTilt +
       this.typingSway * 0.18 +
       this.typingHunch * (this.strikeRock * 0.065 - 0.02) +
       this.spineLean * 0.085 +
@@ -3123,6 +3174,7 @@ export class KuroCatEngine {
 
     // 6) Expressive eyes (lemon-chartreuse for Black Cat / luminous sapphire-blue for Ragdoll!)
     this.drawEyes(ctx, wShift, -1);
+    this.drawSingingMouth(ctx, wShift);
     this.drawHeadphonesFront(ctx);
 
     ctx.restore(); // end head
@@ -4862,6 +4914,7 @@ export class KuroCatEngine {
     }
 
     this.drawCustomEyes(ctx, s, wShift, -1);
+    this.drawSingingMouth(ctx, wShift);
     this.drawHeadphonesFront(ctx);
 
     ctx.restore();

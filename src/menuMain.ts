@@ -21,6 +21,7 @@ interface AppSettings {
   clickThroughLocked: boolean;
   showKeyBubbles: boolean;
   soundEnabled: boolean;
+  musicMode?: boolean;
   autostart: boolean;
   catBreed: string;
   mcpEnabled: boolean;
@@ -200,6 +201,9 @@ function syncUI(): void {
   setCheck('chk-bubbles', settings.showKeyBubbles);
   setCheck('chk-lock', settings.clickThroughLocked);
   setCheck('chk-sound', settings.soundEnabled);
+  const musicToggle = document.getElementById('btn-music');
+  if (musicToggle) musicToggle.style.display = isMacPlatform() ? '' : 'none';
+  setCheck('chk-music', settings.musicMode !== false);
   setCheck('chk-top', settings.alwaysOnTop);
   setCheck('chk-autostart', settings.autostart);
   setCheck('chk-mcp', settings.mcpEnabled);
@@ -622,6 +626,9 @@ async function bootstrap(): Promise<void> {
       case 'toggle-lock':
         void applySettingsPatch({ clickThroughLocked: !settings.clickThroughLocked });
         closeMenu();
+        break;
+      case 'toggle-music':
+        void applySettingsPatch({ musicMode: settings.musicMode === false });
         break;
       case 'toggle-sound':
         void applySettingsPatch({ soundEnabled: !settings.soundEnabled });

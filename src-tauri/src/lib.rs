@@ -8,6 +8,7 @@ mod input_hook;
 #[cfg(target_os = "macos")]
 mod macos_window;
 mod mcp;
+mod music;
 mod obs;
 mod privacy;
 mod tray;
@@ -2538,6 +2539,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            music::netease_playback,
+            music::netease_lyrics,
             get_settings,
             get_resolved_locale,
             trim_idle_memory,

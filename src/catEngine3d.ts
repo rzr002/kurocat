@@ -557,6 +557,11 @@ export class KuroCatEngine3D {
     blush: THREE.Mesh;
   }> = [];
   private readonly faceGroup = new THREE.Group();
+  private singing = false;
+  private readonly singingMouth = new THREE.Group();
+  private readonly openLip = new THREE.Mesh(new THREE.CircleGeometry(1, 24), new THREE.MeshBasicMaterial({ color: '#df959e' }));
+  private readonly mouthInside = new THREE.Mesh(new THREE.CircleGeometry(1, 24), new THREE.MeshBasicMaterial({ color: '#633545' }));
+  private readonly tongue = new THREE.Mesh(new THREE.CircleGeometry(1, 20), new THREE.MeshBasicMaterial({ color: '#ef9ba9' }));
 
   // Shared materials updated on skin switch
   private readonly pawMat: THREE.ShaderMaterial;
@@ -1061,6 +1066,15 @@ export class KuroCatEngine3D {
       );
       this.faceGroup.add(noseMesh, mouth.mesh);
       this.headMount.add(this.faceGroup);
+      const mouthY = NY - 0.070;
+      this.singingMouth.position.set(0, mouthY, this.surfaceZ(0, mouthY) + 0.055);
+      this.mouthInside.position.z = 0.002;
+      this.mouthInside.scale.set(0.82, 0.78, 1);
+      this.tongue.position.set(0, -0.42, 0.004);
+      this.tongue.scale.set(0.54, 0.24, 1);
+      this.singingMouth.add(this.openLip, this.mouthInside, this.tongue);
+      this.singingMouth.visible = false;
+      this.headMount.add(this.singingMouth);
     }
 
     // 8b) Sculpted 3D Gaming Headset (auto-equipped on PC game detection or manual toggle!)
@@ -1696,6 +1710,26 @@ export class KuroCatEngine3D {
     };
   }
 
+  public setSinging(active: boolean, opening: number): void {
+    this.singingMouth.visible = active;
+    this.singingMouth.scale.set(0.071 - 0.021 * opening, 0.012 + 0.072 * opening, 1);
+    this.tongue.visible = opening > 0.3;
+    if (active === this.singing) return;
+    this.singing = active;
+    this.wake();
+    if (!active) return;
+    this.lastKey = -100;
+    this.desk.releaseAllKeys();
+    for (const paw of [this.paws.L, this.paws.R]) { paw.down = false; paw.keyId = null; }
+    this.tailTap.down = false;
+    this.tailTap.keyId = null;
+    this.tailTap.t0 = -100;
+    for (const popup of this.popups.splice(0)) {
+      this.scene.remove(popup.sprite);
+      popup.sprite.material.dispose();
+    }
+  }
+
   public setPrivacyMode(active: boolean): void {
     this.privacyMode = active;
     if (active) {
@@ -2141,7 +2175,7 @@ export class KuroCatEngine3D {
 
     const sleepAfterSec = this.embedded ? 18 : 28;
     const idleSec = t - this.lastInput;
-    if (!this.asleep && !this.privacyMode && !this.petting && idleSec > sleepAfterSec) {
+    if (!this.singing && !this.asleep && !this.privacyMode && !this.petting && idleSec > sleepAfterSec) {
       this.asleep = true;
       this.isCross = false;
       this.idleAct = null;
@@ -2312,7 +2346,8 @@ export class KuroCatEngine3D {
 
     this.headRot.pitch = this.sPitch.step(targetPitch, dt);
     this.headRot.yaw = this.sYaw.step(targetYaw, dt);
-    this.headRot.roll = this.sRoll.step(targetRoll, dt) + wakeShake;
+    const singingTilt = this.singing ? 0.048 * Math.sin(t * 2.4) : 0;
+    this.headRot.roll = this.sRoll.step(targetRoll + singingTilt, dt) + wakeShake;
 
     // Deform one-piece body+head smoothly & sync headMount + optional collar!
     this.deformCatBody();
