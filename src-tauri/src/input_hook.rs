@@ -814,80 +814,17 @@ fn run_windows_hook_loop() {
     }
 }
 
-/// Parses `codesign -d -r- <app>` output and returns a canonical Ad-hoc `cdhash` fingerprint
-/// ONLY when the bundle is ad-hoc signed (never for Apple Developer ID / certificate-signed apps).
+/// Remember showing onboarding, independently of macOS's actual permission decisions.
 #[cfg(any(target_os = "macos", test))]
-pub(crate) fn parse_macos_adhoc_cdhash(codesign_output: &str) -> Option<String> {
-    let req_line = codesign_output
-        .lines()
-        .find_map(|line| {
-            let trimmed = line.trim();
-            trimmed
-                .split_once("designated =>")
-                .map(|(_, rhs)| rhs.trim())
-        })
-        .unwrap_or(codesign_output.trim());
-
-    let lower = req_line.to_ascii_lowercase();
-    // Never treat Apple Developer ID / CA-signed apps as ad-hoc
-    if lower.contains("anchor apple") || lower.contains("certificate ") {
-        return None;
-    }
-
-    let mut hashes: Vec<String> = Vec::new();
-    let mut rest = req_line;
-    while let Some(idx) = rest.find("cdhash H\"") {
-        let after = &rest[idx + "cdhash H\"".len()..];
-        let Some(end) = after.find('"') else {
-            break;
-        };
-        let hex = after[..end].trim().to_ascii_lowercase();
-        if hex.len() >= 16 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
-            hashes.push(hex);
-        }
-        rest = &after[end + 1..];
-    }
-
-    if hashes.is_empty() {
-        return None;
-    }
-    hashes.sort();
-    hashes.dedup();
-    Some(format!("cdhash:{}", hashes.join("|")))
-}
-
-/// Decides whether startup should run `tccutil reset` once to purge broken macOS "ghost toggles"
-/// left behind after an ad-hoc signed upgrade (either in-app auto-update or manual .dmg overwrite).
-#[cfg(any(target_os = "macos", test))]
-pub(crate) fn should_auto_reset_stale_macos_tcc(
-    current_adhoc_sig: Option<&str>,
-    prev_recorded_sig: Option<&str>,
-    has_existing_settings: bool,
-    ax_trusted: bool,
-    listen_trusted: bool,
-) -> bool {
-    // Only applies to ad-hoc signed bundles (Developer ID preserves TCC across upgrades)
-    let Some(curr) = current_adhoc_sig else {
-        return false;
-    };
-    // Never disturb already-working permissions
-    if ax_trusted && listen_trusted {
-        return false;
-    }
-    match prev_recorded_sig.map(str::trim).filter(|s| !s.is_empty()) {
-        // Already checked/reset once for this exact binary hash — never loop!
-        Some(prev) if prev == curr => false,
-        // Upgraded from a previously recorded ad-hoc binary hash -> stale ghost entry!
-        Some(_) => true,
-        // Upgraded from an older version (<= v5.1.0) that already saved settings.json
-        None => has_existing_settings,
-    }
+fn first_macos_permission_prompt(data_dir: &std::path::Path) -> bool {
+    std::fs::create_dir_all(data_dir).is_ok()
+        && std::fs::File::create_new(data_dir.join("macos-permissions-introduced")).is_ok()
 }
 
 #[cfg(target_os = "macos")]
 pub mod macos_hook {
     use super::{
-        hid_usage_to_vk, parse_macos_adhoc_cdhash, should_auto_reset_stale_macos_tcc, KeySource,
+        first_macos_permission_prompt, hid_usage_to_vk, KeySource,
         RawHookMsg, HOOK_TX, KEY_EVENTS_RECEIVED,
     };
     use std::ffi::c_void;
@@ -1238,32 +1175,6 @@ pub mod macos_hook {
 
     const MACOS_BUNDLE_ID: &str = "com.kurocat.pet";
 
-    fn current_macos_app_bundle() -> Option<std::path::PathBuf> {
-        let exe = std::env::current_exe().ok()?;
-        let mut cur = exe.as_path();
-        while let Some(parent) = cur.parent() {
-            if parent.extension().and_then(|s| s.to_str()) == Some("app") {
-                return Some(parent.to_path_buf());
-            }
-            cur = parent;
-        }
-        None
-    }
-
-    fn read_current_adhoc_cdhash() -> Option<String> {
-        let bundle = current_macos_app_bundle()?;
-        let out = std::process::Command::new("/usr/bin/codesign")
-            .args(["-d", "-r-", bundle.to_str()?])
-            .output()
-            .ok()?;
-        let combined = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        parse_macos_adhoc_cdhash(&combined)
-    }
-
     fn run_tccutil_reset_all() {
         for service in ["Accessibility", "ListenEvent"] {
             let _ = std::process::Command::new("/usr/bin/tccutil")
@@ -1271,38 +1182,6 @@ pub mod macos_hook {
                 .status();
         }
         std::thread::sleep(Duration::from_millis(200));
-    }
-
-    /// Automatically purges stale broken TCC "ghost toggles" once after an ad-hoc upgrade
-    /// (covers both in-app updates and manual .dmg drag-and-replace upgrades).
-    fn cleanup_stale_tcc_on_adhoc_upgrade() {
-        let curr_sig = read_current_adhoc_cdhash();
-        let Some(ref sig_str) = curr_sig else {
-            return;
-        };
-
-        let marker_path = crate::config::app_data_dir().join("macos-adhoc-sig.txt");
-        let prev_sig = std::fs::read_to_string(&marker_path).ok();
-        let has_existing_settings = crate::config::config_path().is_file();
-        let (ax_trusted, listen_trusted) =
-            unsafe { (AXIsProcessTrusted(), CGPreflightListenEventAccess()) };
-
-        if should_auto_reset_stale_macos_tcc(
-            Some(sig_str.as_str()),
-            prev_sig.as_deref(),
-            has_existing_settings,
-            ax_trusted,
-            listen_trusted,
-        ) {
-            run_tccutil_reset_all();
-        }
-
-        if prev_sig.as_deref().map(str::trim) != Some(sig_str.as_str()) {
-            if let Some(parent) = marker_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = std::fs::write(&marker_path, sig_str);
-        }
     }
 
     /// Manual 1-click tray escape hatch: purges stale TCC entries and triggers fresh OS prompts.
@@ -1755,10 +1634,9 @@ pub mod macos_hook {
     }
 
     pub fn run_macos_hook_loop() {
-        // Clear stale broken TCC "ghost toggles" once after ad-hoc upgrades before prompting
-        cleanup_stale_tcc_on_adhoc_upgrade();
-        // Trigger both Accessibility and Input Monitoring prompts once on first launch
-        request_permissions_once();
+        if first_macos_permission_prompt(&crate::config::app_data_dir()) {
+            request_permissions_once();
+        }
 
         let mouse_mask: CGEventMask = (1u64 << K_CG_EVENT_LEFT_MOUSE_DOWN)
             | (1u64 << K_CG_EVENT_LEFT_MOUSE_UP)
@@ -2615,35 +2493,11 @@ mod tests {
     }
 
     #[test]
-    fn parses_macos_adhoc_cdhash_and_skips_developer_id() {
-        let universal_adhoc = "Executable=/Applications/KuroCat.app/Contents/MacOS/KuroCat\n\
-            designated => cdhash H\"c5869ec4f5a71deee3cb204dc12605e18d490ce6\" or cdhash H\"263fe7dab4d157a259f8eded6c69135e7c1658ac\"";
-        assert_eq!(
-            parse_macos_adhoc_cdhash(universal_adhoc).as_deref(),
-            Some("cdhash:263fe7dab4d157a259f8eded6c69135e7c1658ac|c5869ec4f5a71deee3cb204dc12605e18d490ce6")
-        );
-
-        let dev_id = "Executable=/Applications/KuroCat.app/Contents/MacOS/KuroCat\n\
-            designated => identifier \"com.kurocat.pet\" and anchor apple generic and certificate leaf[subject.OU] = \"ABCDE12345\"";
-        assert_eq!(parse_macos_adhoc_cdhash(dev_id), None);
-    }
-
-    #[test]
-    fn stale_macos_tcc_auto_reset_triggers_only_once_per_adhoc_upgrade() {
-        let sig_old = "cdhash:1111111111111111";
-        let sig_new = "cdhash:2222222222222222";
-
-        // Developer ID app -> NEVER reset
-        assert!(!should_auto_reset_stale_macos_tcc(None, Some(sig_old), true, false, false));
-        // Both permissions already working -> NEVER reset
-        assert!(!should_auto_reset_stale_macos_tcc(Some(sig_new), Some(sig_old), true, true, true));
-        // Same binary relaunch -> NEVER loop-reset
-        assert!(!should_auto_reset_stale_macos_tcc(Some(sig_new), Some(sig_new), true, false, false));
-        // Upgraded from older ad-hoc binary & missing perms -> RESET once
-        assert!(should_auto_reset_stale_macos_tcc(Some(sig_new), Some(sig_old), true, false, true));
-        // Upgraded from legacy <= v5.1.0 (has settings.json, no marker yet) & missing perms -> RESET once
-        assert!(should_auto_reset_stale_macos_tcc(Some(sig_new), None, true, false, false));
-        // Brand-new fresh install (no settings.json, no marker) -> no stale entries to reset
-        assert!(!should_auto_reset_stale_macos_tcc(Some(sig_new), None, false, false, false));
+    fn macos_permission_prompt_is_once_per_installation() {
+        let dir = std::env::temp_dir().join(format!("kurocat-prompt-test-{}", std::process::id()));
+        assert!(first_macos_permission_prompt(&dir));
+        assert!(!first_macos_permission_prompt(&dir));
+        std::fs::remove_file(dir.join("macos-permissions-introduced")).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }
